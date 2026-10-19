@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Payment (Demo) - Smart Campus Canteen</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    body { background: #f4f6f9; }
+    .brand { background: linear-gradient(135deg, #ff7e29, #ff4d4d); color: #fff; }
+    .demo-banner { background: #fff3cd; color: #664d03; border-bottom: 2px dashed #ffc107; text-align: center; font-weight: 700; padding: 8px 10px; letter-spacing: .5px; font-size: .9rem; }
+    .order-no { font-size: 2.6rem; font-weight: 800; color: #ff4d4d; line-height: 1.1; }
+    .big-icon { width: 76px; height: 76px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 2.6rem; font-weight: 800; color: #fff; margin-bottom: 8px; }
+    .big-icon.ok { background: #198754; }
+    .big-icon.bad { background: #dc3545; }
+    .tile { border: 1px solid #dee2e6; border-radius: 12px; background: #fff; padding: 10px 6px; text-align: center; }
+    .tile .v { font-size: 1.3rem; font-weight: 800; }
+    .pay-pending { background: #fd7e14; color: #fff; }
+    .pay-paid { background: #198754; color: #fff; }
+    .pay-failed { background: #dc3545; color: #fff; }
+    .pay-refunded { background: #6f42c1; color: #fff; }
+  </style>
+</head>
+<body>
+
+<div class="brand text-center py-3">
+  <div class="fw-bold fs-5">🍽️ SMART CAMPUS CANTEEN</div>
+</div>
+
+<main class="container py-4" style="max-width: 560px;">
+  <div id="errBox" class="alert alert-danger d-none"></div>
+
+  <div class="card shadow-sm" id="card">
+    <div class="demo-banner" id="demoBanner">DEMO MODE - no real money is transferred</div>
+    <div class="card-body">
+      <div class="text-center mb-3">
+        <div class="text-muted">Order Token</div>
+        <div class="order-no">#<span id="orderNo"></span></div>
+        <span class="badge bg-warning text-dark" id="demoBadge">DEMO PAYMENT</span>
+      </div>
+
+      <ul class="list-group mb-3">
+        <li class="list-group-item d-flex justify-content-between"><span class="text-muted">Amount payable</span><strong class="fs-5" id="amount">-</strong></li>
+        <li class="list-group-item d-flex justify-content-between"><span class="text-muted">Payment method</span><strong id="pMethod">-</strong></li>
+        <li class="list-group-item d-flex justify-content-between"><span class="text-muted">Payment status</span><span id="pStatus">-</span></li>
+        <li class="list-group-item d-flex justify-content-between"><span class="text-muted">Pickup slot</span><strong id="pSlot">-</strong></li>
+        <li class="list-group-item"><span class="text-muted">Items:</span> <span id="pItems">-</span></li>
+      </ul>
+
+      <div id="actionMsg" class="alert alert-danger py-2 d-none" role="alert"></div>
+
+      <!-- Pending: choose the simulated outcome -->
+      <div id="viewPay" class="d-none">
+        <p class="small text-muted text-center mb-3">
+          This is a college-project <strong>simulation</strong>. Choose an outcome below. No bank or card is contacted and no money moves.
+        </p>
+        <div class="d-grid gap-2">
+          <button type="button" class="btn btn-success btn-lg" id="btnSuccess">✓ Simulate Successful Payment</button>
+          <button type="button" class="btn btn-outline-danger btn-lg" id="btnFail">✕ Simulate Failed Payment</button>
+        </div>
+      </div>
+
+      <!-- Failed -->
+      <div id="viewFailed" class="d-none text-center">
+        <div class="big-icon bad">✕</div>
+        <h2 class="h5 text-danger">Demo payment failed.</h2>
+        <p class="small text-muted">Your order is still saved and stock was not charged again. You can retry the same order.</p>
+        <button type="button" class="btn btn-danger btn-lg" id="btnRetry">Retry Demo Payment</button>
+      </div>
+
+      <!-- Paid -->
+      <div id="viewPaid" class="d-none text-center">
+        <div class="big-icon ok">✓</div>
+        <h2 class="h5 text-success">Demo payment successful.</h2>
+        <p class="small text-muted mb-3">DEMO MODE - this was a simulated payment. No real money was transferred.</p>
+
+        <div class="fs-5 mb-2" id="paidStatusLine"></div>
+        <div class="row g-2 mb-3">
+          <div class="col-4"><div class="tile"><div class="small text-muted">Orders ahead</div><div class="v" id="tAhead">-</div></div></div>
+          <div class="col-4"><div class="tile"><div class="small text-muted">Est. wait</div><div class="v" id="tWait">-</div></div></div>
+          <div class="col-4"><div class="tile"><div class="small text-muted">Expected ready</div><div class="v" id="tReady">-</div></div></div>
+        </div>
+
+        <div id="qrWrap" class="mb-3 d-none">
+          <img id="qrImg" alt="QR code to track your order" style="width:170px;height:170px;image-rendering:pixelated;">
+          <div class="small text-muted">Scan to Track Order</div>
+        </div>
+        <a class="btn btn-primary btn-lg" id="trackBtnPaid" href="#">TRACK MY ORDER</a>
+        <p class="small text-muted mt-2 mb-0" id="cancelHint"></p>
+      </div>
+
+      <!-- Cash order opened on the payment page -->
+      <div id="viewCash" class="d-none text-center">
+        <div class="alert alert-info">This is a <strong>Cash on Pickup</strong> order. No online payment is needed - please pay at the counter when you collect your order.</div>
+        <a class="btn btn-primary" id="trackBtnCash" href="#">TRACK MY ORDER</a>
+      </div>
+
+      <!-- Cancelled order -->
+      <div id="viewCancelled" class="d-none text-center">
+        <div class="alert alert-danger mb-2">This order was cancelled. No payment is needed.</div>
+        <a class="btn btn-outline-secondary" id="trackBtnCancelled" href="#">VIEW ORDER</a>
+      </div>
+    </div>
+  </div>
+  <p class="text-center text-muted small mt-3"><a href="/">← Back to menu</a></p>
+</main>
+
+<script>
+(function () {
+  "use strict";
+
+  var ORDER_ID = {{ order_id|tojson }};
+  var KEY = new URLSearchParams(window.location.search).get("key") || "";   // the order's private key
+  var VIEWS = ["viewPay", "viewFailed", "viewPaid", "viewCash", "viewCancelled"];
+  var STATUS_UI = {
+    Pending: "🟡 Waiting in queue", Preparing: "🟠 Preparing",
+    Ready: "🟢 Ready for pickup!", Completed: "⚪ Completed"
+  };
+  var busy = false, qrLoaded = false, timer = null;
+  var TRACK = "/track/" + ORDER_ID + (KEY ? "?key=" + encodeURIComponent(KEY) : "");
+
+  function $(id) { return document.getElementById(id); }
+  function money(n) { return "₹" + Number(n).toFixed(2); }
+
+  function payBadge(status) {
+    if (status === "Paid") { return '<span class="badge pay-paid">✓ Paid</span>'; }
+    if (status === "Failed") { return '<span class="badge pay-failed">✕ Failed</span>'; }
+    if (status === "Refunded") { return '<span class="badge pay-refunded">↩ Refunded</span>'; }
+    return '<span class="badge pay-pending">🕒 Pending</span>';
+  }
+
+  function setView(name) {
+    VIEWS.forEach(function (v) { $(v).classList.toggle("d-none", v !== name); });
+  }
+
+  function setBusy(flag) {
+    busy = flag;
+    ["btnSuccess", "btnFail", "btnRetry"].forEach(function (id) { $(id).disabled = flag; });
+  }
+
+  function showActionError(msg) {
+    $("actionMsg").textContent = msg;
+    $("actionMsg").classList.remove("d-none");
+  }
+
+  function loadQr() {
+    if (qrLoaded || !KEY) { return; }
+    fetch("/api/order/" + ORDER_ID + "/qr?key=" + encodeURIComponent(KEY), { cache: "no-store" })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (d.success && d.qr_data_uri) {
+          $("qrImg").setAttribute("src", d.qr_data_uri);
+          $("qrWrap").classList.remove("d-none");
+          qrLoaded = true;
+        }
+      }).catch(function () {});
+  }
+
+  function render(d) {
+    $("orderNo").textContent = d.order_id;
+    $("amount").textContent = money(d.total_price);
+    $("pMethod").textContent = d.payment_method_label;
+    $("pStatus").innerHTML = payBadge(d.payment_status);
+    $("pSlot").textContent = d.pickup_time;
+    $("pItems").textContent = d.items_summary;
+    ["trackBtnPaid", "trackBtnCash", "trackBtnCancelled"].forEach(function (id) { $(id).setAttribute("href", TRACK); });
+    document.title = "Payment (Demo) - Order #" + d.order_id;
+
+    if (d.status === "Cancelled") {
+      $("demoBanner").classList.add("d-none");
+      $("demoBadge").classList.add("d-none");
+      setView("viewCancelled");
+      return;
+    }
+    if (d.payment_method !== "Online") {
+      $("demoBanner").classList.add("d-none");
+      $("demoBadge").classList.add("d-none");
+      setView("viewCash");
+      return;
+    }
+    $("demoBanner").classList.remove("d-none");
+    $("demoBadge").classList.remove("d-none");
+
+    if (d.payment_status === "Paid") {
+      var finished = (d.status === "Ready" || d.status === "Completed");
+      $("paidStatusLine").textContent = STATUS_UI[d.status] || d.status;
+      $("tAhead").textContent = d.orders_ahead;
+      $("tWait").textContent = finished ? "0 min" : d.estimated_wait_minutes + " min";
+      $("tReady").textContent = d.expected_ready_time;
+      $("cancelHint").textContent = "Changed your mind? You can cancel from the tracking page for " + d.cancel_window_minutes +
+        " minutes after payment, while your order is still waiting in the queue.";
+      setView("viewPaid");
+      loadQr();
+    } else if (d.payment_status === "Failed") {
+      setView("viewFailed");
+    } else {
+      setView("viewPay");
+    }
+  }
+
+  function load() {
+    return fetch("/api/order/" + ORDER_ID + "/status" + (KEY ? "?key=" + encodeURIComponent(KEY) : ""), { cache: "no-store" })
+      .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+      .then(function (res) {
+        if (!res.ok || !res.d.success) {
+          $("errBox").textContent = res.d.error || "Could not load this order.";
+          $("errBox").classList.remove("d-none");
+          if (res.d.error === "Order not found.") {
+            $("card").classList.add("d-none");
+            if (timer) { clearInterval(timer); timer = null; }
+          }
+          return;
+        }
+        $("errBox").classList.add("d-none");
+        $("card").classList.remove("d-none");
+        render(res.d);
+      })
+      .catch(function () {
+        $("errBox").textContent = "Connection problem - retrying...";
+        $("errBox").classList.remove("d-none");
+      });
+  }
+
+  // The browser only REQUESTS an outcome. Flask validates it and writes the status to MySQL.
+  function simulate(action) {
+    if (busy) { return; }
+    setBusy(true);
+    $("actionMsg").classList.add("d-none");
+    fetch("/api/payment/" + ORDER_ID + "/simulate", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: action, key: KEY })
+    })
+      .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+      .then(function (res) {
+        if (!res.ok || !res.d.success) { showActionError(res.d.error || "Could not update the payment."); }
+        return load();
+      })
+      .catch(function () { showActionError("Network error. Please try again."); })
+      .then(function () { setBusy(false); });
+  }
+
+  $("btnSuccess").addEventListener("click", function () { simulate("success"); });
+  $("btnFail").addEventListener("click", function () { simulate("failure"); });
+  $("btnRetry").addEventListener("click", function () { simulate("retry"); });
+
+  load();
+  timer = setInterval(function () { if (!busy) { load(); } }, 5000);
+})();
+</script>
+</body>
+</html>

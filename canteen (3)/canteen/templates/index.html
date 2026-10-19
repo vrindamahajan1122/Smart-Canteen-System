@@ -1,0 +1,595 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Smart Campus Canteen - Order Now</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    body { background: #f4f6f9; }
+    .hero { background: linear-gradient(135deg, #ff7e29, #ff4d4d); color: #fff; }
+    .menu-card { border: 0; box-shadow: 0 2px 8px rgba(0,0,0,.08); transition: transform .15s; }
+    .menu-card:hover { transform: translateY(-2px); }
+    .menu-card.sold-out { opacity: .55; }
+    .qty-box { min-width: 36px; text-align: center; font-weight: 600; }
+    .cart-sticky { position: sticky; top: 16px; }
+    .token-number { font-size: 4rem; font-weight: 800; color: #ff4d4d; line-height: 1; }
+    .rec-banner { background: #fff8e1; border: 2px solid #ffc107; border-radius: 12px; padding: 12px 14px; margin-bottom: 12px; }
+    .slot-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; max-height: 330px; overflow-y: auto; padding: 2px; }
+    .slot-card { text-align: left; border: 2px solid #dee2e6; border-radius: 10px; background: #fff; padding: 8px 10px; font-size: .85rem; }
+    .slot-card:hover:not(:disabled) { border-color: #0d6efd; }
+    .slot-card.selected { border-color: #198754; background: #e8f6ee; }
+    .slot-card.recommended { box-shadow: 0 0 0 2px #ffc107 inset; }
+    .slot-card:disabled { background: #f1f3f5; color: #868e96; cursor: not-allowed; }
+    .slot-card .progress { height: 5px; margin-top: 5px; }
+    .pay-card { text-align: left; height: 100%; padding: 10px 12px; line-height: 1.25; }
+    .pay-card .pay-title { display: block; font-weight: 700; }
+    .pay-card small { display: block; opacity: .85; font-size: .78rem; }
+    .opt-badge { font-weight: 600; margin-right: 4px; }
+    .cart-line .note { font-size: .8rem; color: #6c757d; }
+    .opt-row { padding: 6px 8px; border: 1px solid #dee2e6; border-radius: 8px; margin-bottom: 6px; background: #fff; }
+  </style>
+</head>
+<body>
+
+<nav class="navbar navbar-dark bg-dark">
+  <div class="container">
+    <span class="navbar-brand mb-0 h1">🍽️ Smart Campus Canteen</span>
+    <div>
+      <a class="btn btn-sm btn-outline-light me-1" href="/kitchen">Kitchen</a>
+      <a class="btn btn-sm btn-outline-light me-1" href="/display">Display</a>
+      <a class="btn btn-sm btn-outline-light" href="/analytics">Analytics</a>
+    </div>
+  </div>
+</nav>
+
+<header class="hero py-4 mb-4">
+  <div class="container">
+    <h1 class="h3 mb-1">Skip the queue. Pre-order your meal!</h1>
+    <p class="mb-0">Pick your food, customize it, choose a less crowded pickup slot, and track your order live.</p>
+  </div>
+</header>
+
+<main class="container pb-5">
+  <div id="pageError" class="alert alert-danger d-none"></div>
+
+  <div class="row g-4">
+    <div class="col-lg-7">
+      <h2 class="h5 mb-3">Today's Menu</h2>
+      <div class="row g-3" id="menuList">
+        <div class="col-12 text-muted">Loading menu...</div>
+      </div>
+    </div>
+
+    <div class="col-lg-5">
+      <div class="card shadow-sm cart-sticky">
+        <div class="card-body">
+          <h2 class="h5 mb-3">Your Order</h2>
+          <ul class="list-group mb-3" id="cartList">
+            <li class="list-group-item text-muted">Your cart is empty.</li>
+          </ul>
+          <div class="d-flex justify-content-between fs-5 fw-bold mb-3">
+            <span>Total</span><span id="cartTotal">₹0.00</span>
+          </div>
+
+          <div class="mb-3">
+            <label for="studentName" class="form-label">Student Name</label>
+            <input type="text" class="form-control" id="studentName" maxlength="100" placeholder="Enter your name">
+          </div>
+
+          <div class="mb-2 fw-semibold">Pickup Time Slot</div>
+          <div id="recBox"></div>
+          <div class="slot-grid mb-3" id="slotBox"><div class="text-muted small">Loading slots...</div></div>
+
+          <div class="mb-2 fw-semibold">Payment Method</div>
+          <div class="row g-2 mb-3" id="paymentBox">
+            <div class="col-6">
+              <input type="radio" class="btn-check" name="paymentMethod" id="payCash" value="Cash" autocomplete="off">
+              <label class="btn btn-outline-success pay-card w-100" for="payCash">
+                <span class="pay-title">💵 Cash on Pickup</span>
+                <small>Pay at the counter when you collect</small>
+              </label>
+            </div>
+            <div class="col-6">
+              <input type="radio" class="btn-check" name="paymentMethod" id="payOnline" value="Online" autocomplete="off">
+              <label class="btn btn-outline-primary pay-card w-100" for="payOnline">
+                <span class="pay-title">💳 Online Payment</span>
+                <small>Demo mode - no real money</small>
+              </label>
+            </div>
+          </div>
+
+          <div id="formError" class="alert alert-danger py-2 d-none" role="alert"></div>
+          <button type="button" class="btn btn-danger w-100 btn-lg" id="placeOrderBtn">Place Order</button>
+          <p class="small text-muted mt-2 mb-0">Customizations are kitchen preferences, not allergy guarantees. Please tell the counter about any allergy.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<!-- Customize modal -->
+<div class="modal fade" id="customModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="cTitle">Customize</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="fw-semibold mb-2">Choose your options</div>
+        <div id="cOptions"></div>
+        <label for="cNote" class="form-label mt-3 mb-1">Special instructions (optional)</label>
+        <textarea class="form-control" id="cNote" rows="2" maxlength="150" placeholder="e.g. cut in half"></textarea>
+        <div class="d-flex align-items-center justify-content-between mt-3">
+          <div class="d-flex align-items-center">
+            <button type="button" class="btn btn-outline-secondary btn-sm" id="cMinus">−</button>
+            <span class="qty-box mx-2" id="cQty">1</span>
+            <button type="button" class="btn btn-outline-primary btn-sm" id="cPlus">+</button>
+          </div>
+          <div class="fw-bold" id="cPrice">₹0.00</div>
+        </div>
+        <div id="cError" class="alert alert-danger py-2 mt-3 mb-0 d-none"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary" id="cConfirm">Add to cart</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Success modal -->
+<div class="modal fade" id="successModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content text-center">
+      <div class="modal-header bg-success text-white">
+        <h5 class="modal-title w-100">🎉 ORDER PLACED SUCCESSFULLY</h5>
+      </div>
+      <div class="modal-body py-3">
+        <p class="mb-1 text-muted">TOKEN</p>
+        <div class="token-number mb-2" id="mTokenNumber">#0</div>
+        <p class="mb-2 fs-5" id="mStatus"></p>
+        <div class="alert alert-success py-2 small mb-2" id="mPayMsg"></div>
+        <div class="row g-2 mb-2">
+          <div class="col-4"><div class="border rounded py-2"><div class="small text-muted">Orders ahead</div><div class="fw-bold fs-5" id="mAhead">-</div></div></div>
+          <div class="col-4"><div class="border rounded py-2"><div class="small text-muted">Est. wait</div><div class="fw-bold fs-5" id="mWait">-</div></div></div>
+          <div class="col-4"><div class="border rounded py-2"><div class="small text-muted">Expected ready</div><div class="fw-bold fs-5" id="mReady">-</div></div></div>
+        </div>
+        <p class="mb-1">Pickup: <strong id="mSlot"></strong></p>
+        <p class="mb-1 small" id="mItems"></p>
+        <p class="mb-1">Total: <strong id="mTotal"></strong></p>
+        <p class="mb-2">Payment: <strong id="mPayLine"></strong></p>
+        <div id="mQrWrap" class="mb-2">
+          <img id="mQr" alt="QR code to track your order" style="width:170px;height:170px;image-rendering:pixelated;">
+          <div class="small text-muted">Scan to Track Order</div>
+        </div>
+        <a id="mTrackLink" class="btn btn-primary" href="#">TRACK MY ORDER</a>
+        <p class="small text-muted mt-2 mb-0" id="mCancelHint"></p>
+      </div>
+      <div class="modal-footer justify-content-center">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+(function () {
+  "use strict";
+
+  var menu = [], cart = [], slots = [], recommended = null, selectedSlot = null;
+  var maxQty = 20, maxNote = 150, menuSig = "", slotsSig = "", modalTimer = null, modalOrderId = null;
+  var custom = { itemId: null, editIdx: null, qty: 1, max: 1 };
+  var customModal = new bootstrap.Modal(document.getElementById("customModal"));
+  var STATUS_UI = {
+    Pending: ["🟡", "Waiting in queue"], Preparing: ["🟠", "Preparing"],
+    Ready: ["🟢", "READY for pickup!"], Completed: ["⚪", "Completed"], Cancelled: ["🔴", "Cancelled"]
+  };
+
+  function $(id) { return document.getElementById(id); }
+  function money(n) { return "₹" + Number(n).toFixed(2); }
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+  function showError(msg) { $("formError").textContent = msg; $("formError").classList.remove("d-none"); }
+  function clearError() { $("formError").classList.add("d-none"); }
+  function showPageError(msg) { $("pageError").textContent = msg; $("pageError").classList.remove("d-none"); }
+  function clearPageError() { $("pageError").classList.add("d-none"); }
+
+  function findItem(id) {
+    for (var i = 0; i < menu.length; i++) { if (menu[i].item_id === id) { return menu[i]; } }
+    return null;
+  }
+  function itemLimit(it) { return Math.min(maxQty, it.stock_quantity); }
+  function sortNum(a) { return a.slice().sort(function (x, y) { return x - y; }); }
+  function lineKey(itemId, options, note) { return itemId + "|" + sortNum(options).join(",") + "|" + note.toLowerCase(); }
+  function itemTotal(itemId, skipIdx) {
+    var t = 0;
+    cart.forEach(function (l, i) { if (l.item_id === itemId && i !== skipIdx) { t += l.quantity; } });
+    return t;
+  }
+  function optionName(it, oid) {
+    for (var i = 0; i < it.options.length; i++) { if (it.options[i].option_id === oid) { return it.options[i]; } }
+    return null;
+  }
+  function extraCost(it, optionIds) {
+    var sum = 0;
+    optionIds.forEach(function (id) { var o = optionName(it, id); if (o) { sum += o.extra_price; } });
+    return sum;
+  }
+  function unitPrice(l) { var it = findItem(l.item_id); return it ? it.price + extraCost(it, l.options) : 0; }
+  function findLine(key) {
+    for (var i = 0; i < cart.length; i++) { if (lineKey(cart[i].item_id, cart[i].options, cart[i].note) === key) { return i; } }
+    return -1;
+  }
+  function addLine(line) {
+    var idx = findLine(lineKey(line.item_id, line.options, line.note));
+    if (idx >= 0) { cart[idx].quantity += line.quantity; } else { cart.push(line); }
+  }
+
+  /* ---------------- MENU ---------------- */
+  function renderMenu() {
+    if (!menu.length) { $("menuList").innerHTML = '<div class="col-12"><div class="alert alert-warning">No menu items available.</div></div>'; return; }
+    var html = "";
+    menu.forEach(function (it) {
+      var badge = it.sold_out ? '<span class="badge bg-danger">🔴 SOLD OUT</span>'
+        : (it.low_stock ? '<span class="badge bg-warning text-dark">Only ' + it.stock_quantity + ' left</span>'
+        : '<span class="badge bg-success">In stock: ' + it.stock_quantity + '</span>');
+      var dis = it.sold_out ? " disabled" : "";
+      var controls;
+      if (it.options.length) {
+        controls = '<button type="button" class="btn btn-outline-primary btn-sm" data-action="custom" data-id="' + it.item_id + '"' + dis + '>✏️ Customize &amp; add</button>' +
+          '<span class="small text-muted">In cart: <strong id="qty-' + it.item_id + '">0</strong></span>';
+      } else {
+        controls = '<div class="d-flex align-items-center">' +
+          '<button type="button" class="btn btn-outline-secondary btn-sm" data-action="dec" data-id="' + it.item_id + '"' + dis + '>−</button>' +
+          '<span class="qty-box mx-2" id="qty-' + it.item_id + '">0</span>' +
+          '<button type="button" class="btn btn-outline-primary btn-sm" data-action="inc" data-id="' + it.item_id + '"' + dis + '>+</button></div>';
+      }
+      html += '<div class="col-12 col-md-6"><div class="card menu-card h-100' + (it.sold_out ? " sold-out" : "") + '">' +
+        '<div class="card-body d-flex flex-column">' +
+        '<div class="d-flex justify-content-between align-items-start mb-1"><h3 class="h6 card-title mb-0">' + esc(it.item_name) + '</h3>' + badge + '</div>' +
+        '<p class="text-success fw-bold mb-3">' + money(it.price) + '</p>' +
+        '<div class="mt-auto d-flex align-items-center justify-content-between">' + controls + '</div>' +
+        '</div></div></div>';
+    });
+    $("menuList").innerHTML = html;
+    updateCounts();
+  }
+
+  function updateCounts() {
+    menu.forEach(function (it) { var el = $("qty-" + it.item_id); if (el) { el.textContent = itemTotal(it.item_id, -1); } });
+  }
+
+  /* Remove sold-out items / vanished options and cap quantities to current stock */
+  function clampCart() {
+    var running = {}, out = [], changed = false;
+    cart.forEach(function (l) {
+      var it = findItem(l.item_id);
+      if (!it || it.sold_out) { changed = true; return; }
+      var valid = it.options.map(function (o) { return o.option_id; });
+      var opts = l.options.filter(function (id) { return valid.indexOf(id) >= 0; });
+      if (opts.length !== l.options.length) { changed = true; }
+      l.options = opts;
+      var used = running[l.item_id] || 0;
+      var q = Math.min(l.quantity, itemLimit(it) - used);
+      if (q !== l.quantity) { changed = true; }
+      if (q <= 0) { return; }
+      l.quantity = q; running[l.item_id] = used + q; out.push(l);
+    });
+    cart = out;
+    return changed;
+  }
+
+  function optionBadges(it, optionIds) {
+    return optionIds.map(function (id) {
+      var o = optionName(it, id);
+      if (!o) { return ""; }
+      var cls = /^(no|less)\b/i.test(o.option_name) ? "bg-danger" : "bg-primary";
+      return '<span class="badge ' + cls + ' opt-badge">' + esc(o.option_name) + (o.extra_price > 0 ? " +₹" + o.extra_price.toFixed(0) : "") + '</span>';
+    }).join("");
+  }
+
+  function renderCart() {
+    var total = 0, html = "";
+    if (!cart.length) {
+      $("cartList").innerHTML = '<li class="list-group-item text-muted">Your cart is empty.</li>';
+    } else {
+      cart.forEach(function (l, idx) {
+        var it = findItem(l.item_id);
+        if (!it) { return; }
+        var line = unitPrice(l) * l.quantity;
+        total += line;
+        html += '<li class="list-group-item cart-line">' +
+          '<div class="d-flex justify-content-between"><div><strong>' + esc(it.item_name) + '</strong><div>' + optionBadges(it, l.options) + '</div>' +
+          (l.note ? '<div class="note">Note: ' + esc(l.note) + '</div>' : '') + '</div>' +
+          '<div class="text-end fw-semibold">' + money(line) + '</div></div>' +
+          '<div class="d-flex align-items-center mt-2 flex-wrap gap-1">' +
+          '<button type="button" class="btn btn-outline-secondary btn-sm" data-line="dec" data-idx="' + idx + '">−</button>' +
+          '<span class="qty-box">' + l.quantity + '</span>' +
+          '<button type="button" class="btn btn-outline-primary btn-sm" data-line="inc" data-idx="' + idx + '">+</button>' +
+          (it.options.length ? '<button type="button" class="btn btn-link btn-sm" data-line="edit" data-idx="' + idx + '">Edit</button>' : '') +
+          '<button type="button" class="btn btn-link btn-sm text-danger" data-line="remove" data-idx="' + idx + '">Remove</button>' +
+          '</div></li>';
+      });
+      $("cartList").innerHTML = html;
+    }
+    $("cartTotal").textContent = money(total);
+    updateCounts();
+  }
+
+  $("menuList").addEventListener("click", function (e) {
+    var btn = e.target.closest("button[data-action]");
+    if (!btn) { return; }
+    var id = parseInt(btn.getAttribute("data-id"), 10), it = findItem(id), act = btn.getAttribute("data-action");
+    if (!it || it.sold_out) { return; }
+    if (act === "custom") { openCustom(id, null); return; }
+    var plainIdx = findLine(lineKey(id, [], ""));
+    if (act === "inc") {
+      if (itemTotal(id, -1) >= itemLimit(it)) { return; }
+      if (plainIdx >= 0) { cart[plainIdx].quantity += 1; } else { cart.push({ item_id: id, quantity: 1, options: [], note: "" }); }
+    } else if (plainIdx >= 0) {
+      cart[plainIdx].quantity -= 1;
+      if (cart[plainIdx].quantity <= 0) { cart.splice(plainIdx, 1); }
+    }
+    renderCart();
+  });
+
+  $("cartList").addEventListener("click", function (e) {
+    var btn = e.target.closest("button[data-line]");
+    if (!btn) { return; }
+    var idx = parseInt(btn.getAttribute("data-idx"), 10), act = btn.getAttribute("data-line"), l = cart[idx];
+    if (!l) { return; }
+    var it = findItem(l.item_id);
+    if (act === "inc") {
+      if (it && itemTotal(l.item_id, -1) < itemLimit(it)) { l.quantity += 1; }
+      else { showError("Stock limit reached for " + (it ? it.item_name : "this item") + "."); }
+    } else if (act === "dec") {
+      l.quantity -= 1;
+      if (l.quantity <= 0) { cart.splice(idx, 1); }
+    } else if (act === "remove") {
+      cart.splice(idx, 1);
+    } else if (act === "edit") {
+      openCustom(l.item_id, idx); return;
+    }
+    renderCart();
+  });
+
+  function loadMenu() {
+    fetch("/api/menu", { cache: "no-store" }).then(function (r) { return r.json(); }).then(function (d) {
+      if (!d.success) { showPageError(d.error || "Could not load the menu."); return; }
+      clearPageError();
+      maxQty = d.max_qty_per_item || 20;
+      maxNote = d.max_note_length || 150;
+      var sig = JSON.stringify(d.items);
+      if (sig !== menuSig) {
+        menuSig = sig; menu = d.items;
+        if (clampCart()) { showError("Your cart was adjusted because stock or options changed."); }
+        renderMenu(); renderCart();
+      }
+    }).catch(function () { showPageError("Network error while loading the menu."); });
+  }
+
+  /* ---------------- CUSTOMIZE MODAL ---------------- */
+  function selectedOptionIds() {
+    var ids = [];
+    document.querySelectorAll("#cOptions input[type=checkbox]:checked").forEach(function (c) { ids.push(parseInt(c.value, 10)); });
+    return sortNum(ids);
+  }
+  function updateCustomPrice() {
+    var it = findItem(custom.itemId);
+    if (!it) { return; }
+    $("cQty").textContent = custom.qty;
+    $("cPrice").textContent = money((it.price + extraCost(it, selectedOptionIds())) * custom.qty);
+  }
+  function openCustom(itemId, editIdx) {
+    var it = findItem(itemId);
+    if (!it) { return; }
+    var line = editIdx !== null ? cart[editIdx] : null;
+    custom.itemId = itemId; custom.editIdx = editIdx;
+    custom.max = itemLimit(it) - itemTotal(itemId, editIdx !== null ? editIdx : -1);
+    custom.qty = line ? line.quantity : 1;
+    if (custom.qty > custom.max) { custom.qty = Math.max(1, custom.max); }
+    $("cTitle").textContent = it.item_name + " - " + money(it.price);
+    var html = "";
+    it.options.forEach(function (o) {
+      var checked = line && line.options.indexOf(o.option_id) >= 0 ? " checked" : "";
+      html += '<div class="opt-row form-check"><input class="form-check-input" type="checkbox" id="opt-' + o.option_id + '" value="' + o.option_id + '" data-group="' + esc(o.option_group || "") + '"' + checked + '>' +
+        '<label class="form-check-label w-100" for="opt-' + o.option_id + '">' + esc(o.option_name) +
+        (o.extra_price > 0 ? ' <span class="text-muted">(+₹' + o.extra_price.toFixed(2) + ')</span>' : '') + '</label></div>';
+    });
+    $("cOptions").innerHTML = html;
+    $("cNote").value = line ? line.note : "";
+    $("cNote").setAttribute("maxlength", maxNote);
+    $("cConfirm").textContent = line ? "Save changes" : "Add to cart";
+    var blocked = custom.max < 1;
+    $("cConfirm").disabled = blocked;
+    if (blocked) { $("cError").textContent = "You already have the maximum available quantity of this item."; $("cError").classList.remove("d-none"); }
+    else { $("cError").classList.add("d-none"); }
+    updateCustomPrice();
+    customModal.show();
+  }
+
+  $("cOptions").addEventListener("change", function (e) {
+    var t = e.target;
+    if (t.checked && t.getAttribute("data-group")) {   // options in one group are mutually exclusive
+      document.querySelectorAll("#cOptions input[type=checkbox]").forEach(function (o) {
+        if (o !== t && o.getAttribute("data-group") === t.getAttribute("data-group")) { o.checked = false; }
+      });
+    }
+    updateCustomPrice();
+  });
+  $("cMinus").addEventListener("click", function () { if (custom.qty > 1) { custom.qty -= 1; updateCustomPrice(); } });
+  $("cPlus").addEventListener("click", function () { if (custom.qty < custom.max) { custom.qty += 1; updateCustomPrice(); } });
+  $("cConfirm").addEventListener("click", function () {
+    var line = {
+      item_id: custom.itemId, quantity: custom.qty, options: selectedOptionIds(),
+      note: $("cNote").value.replace(/\s+/g, " ").trim().slice(0, maxNote)
+    };
+    if (custom.editIdx !== null) { cart.splice(custom.editIdx, 1); }
+    addLine(line);
+    customModal.hide();
+    clearError();
+    renderCart();
+  });
+
+  /* ---------------- SLOTS ---------------- */
+  function renderSlots() {
+    var rec = recommended;
+    if (rec) {
+      $("recBox").innerHTML = '<div class="rec-banner"><div class="fw-bold">⭐ RECOMMENDED PICKUP SLOT</div>' +
+        '<div class="fs-5">' + esc(rec.label) + '</div>' +
+        '<div class="small">Only ' + rec.booked + ' orders scheduled · ' + rec.remaining + ' spots available</div>' +
+        '<button type="button" class="btn btn-sm btn-warning mt-2" data-pick="' + rec.slot_id + '">Choose this slot</button></div>';
+    } else {
+      $("recBox").innerHTML = '<div class="alert alert-warning py-2 small">No pickup slots are available right now.</div>';
+    }
+    var html = "";
+    slots.forEach(function (s) {
+      var blocked = s.is_full || s.is_closed;
+      var cls = "slot-card" + (selectedSlot === s.slot_id ? " selected" : "") + (s.is_recommended ? " recommended" : "");
+      var status = s.is_closed ? '<span class="badge bg-secondary">CLOSED</span>'
+        : (s.is_full ? '<span class="badge bg-danger">🔴 FULL</span>'
+        : '<span class="text-success">' + s.remaining + ' spot' + (s.remaining === 1 ? "" : "s") + ' available</span>');
+      var bar = s.utilization >= 90 ? "bg-danger" : (s.utilization >= 60 ? "bg-warning" : "bg-success");
+      html += '<button type="button" class="' + cls + '" data-slot="' + s.slot_id + '"' + (blocked ? " disabled" : "") + '>' +
+        '<div class="fw-semibold">' + esc(s.label) + (s.is_recommended ? " ⭐" : "") + '</div>' +
+        '<div>' + s.booked + '/' + s.capacity + ' · ' + status + '</div>' +
+        '<div class="progress"><div class="progress-bar ' + bar + '" style="width:' + Math.min(100, s.utilization) + '%"></div></div></button>';
+    });
+    $("slotBox").innerHTML = html || '<div class="text-muted small">No slots configured.</div>';
+  }
+
+  function selectSlot(id) { selectedSlot = id; renderSlots(); }
+  $("slotBox").addEventListener("click", function (e) {
+    var b = e.target.closest("button[data-slot]");
+    if (b && !b.disabled) { selectSlot(parseInt(b.getAttribute("data-slot"), 10)); }
+  });
+  $("recBox").addEventListener("click", function (e) {
+    var b = e.target.closest("button[data-pick]");
+    if (b) { selectSlot(parseInt(b.getAttribute("data-pick"), 10)); }
+  });
+
+  function loadSlots() {
+    fetch("/api/slots", { cache: "no-store" }).then(function (r) { return r.json(); }).then(function (d) {
+      if (!d.success) { return; }
+      var sig = JSON.stringify([d.slots, d.recommended, selectedSlot]);
+      slots = d.slots; recommended = d.recommended;
+      if (selectedSlot !== null) {
+        var cur = slots.filter(function (s) { return s.slot_id === selectedSlot; })[0];
+        if (!cur || cur.is_full || cur.is_closed) {
+          selectedSlot = null;
+          showError("Your selected pickup slot just filled up. Please choose another slot.");
+          sig = "";
+        }
+      }
+      if (sig !== slotsSig) { slotsSig = sig; renderSlots(); }
+    }).catch(function () { /* keep last known slots */ });
+  }
+
+  /* ---------------- ORDER ---------------- */
+  function getPaymentMethod() {
+    var checked = document.querySelector('input[name="paymentMethod"]:checked');
+    return checked ? checked.value : null;
+  }
+
+  function fillModal(o) {
+    var ui = STATUS_UI[o.status] || ["", o.status];
+    $("mStatus").textContent = ui[0] + " " + ui[1];
+    $("mAhead").textContent = o.orders_ahead;
+    $("mWait").textContent = (o.status === "Ready" || o.status === "Completed" || o.status === "Cancelled") ? "0 min" : o.estimated_wait_minutes + " min";
+    $("mReady").textContent = o.expected_ready_time;
+    if (o.payment_method_label) { $("mPayLine").textContent = o.payment_method_label + " · " + o.payment_status; }
+  }
+
+  function pollModal() {
+    if (!modalOrderId) { return; }
+    fetch("/api/order/" + modalOrderId + "/status", { cache: "no-store" })
+      .then(function (r) { return r.json(); })
+      .then(function (d) { if (d.success) { fillModal(d); } })
+      .catch(function () {});
+  }
+
+  $("successModal").addEventListener("hidden.bs.modal", function () {
+    if (modalTimer) { clearInterval(modalTimer); modalTimer = null; }
+    modalOrderId = null;
+  });
+
+  $("placeOrderBtn").addEventListener("click", function () {
+    clearError();
+    var name = $("studentName").value.trim();
+    var payMethod = getPaymentMethod();
+    if (!cart.length) { showError("Please add at least one item to your cart."); return; }
+    if (!name) { showError("Please enter your name."); $("studentName").focus(); return; }
+    if (selectedSlot === null) { showError("Please select a pickup time slot."); return; }
+    if (!payMethod) { showError("Please select a payment method."); return; }
+
+    var items = cart.map(function (l) {
+      return { item_id: l.item_id, quantity: l.quantity, options: l.options, note: l.note };
+    });
+    var btn = $("placeOrderBtn");
+    btn.disabled = true; btn.textContent = "Placing order...";
+
+    fetch("/api/order", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ student_name: name, slot_id: selectedSlot, payment_method: payMethod, items: items })
+    }).then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+      .then(function (res) {
+        if (!res.ok || !res.d.success) {
+          showError(res.d.error || "Could not place the order. Please try again.");
+          loadMenu(); loadSlots();
+          return;
+        }
+
+        // Online (demo) payment: go to the dedicated payment page (the link carries the order's private key)
+        if (res.d.payment_url) {
+          btn.textContent = "Redirecting to payment...";
+          window.location.href = res.d.payment_url;
+          return;
+        }
+
+        // Cash on Pickup: show the confirmation
+        var o = res.d.order;
+        $("mTokenNumber").textContent = "#" + res.d.token;
+        $("mSlot").textContent = o.pickup_time;
+        $("mItems").textContent = o.items_summary;
+        $("mTotal").textContent = money(o.total_price);
+        $("mPayMsg").textContent = res.d.message;
+        $("mTrackLink").setAttribute("href", "/track/" + res.d.token + "?key=" + encodeURIComponent(res.d.key));
+        $("mCancelHint").textContent = "You can cancel from the tracking page for " + o.cancel_window_minutes +
+          " minutes after your payment is recorded, while your order is still waiting in the queue.";
+        if (res.d.qr_data_uri) {
+          $("mQr").setAttribute("src", res.d.qr_data_uri);
+          $("mQrWrap").classList.remove("d-none");
+        } else {
+          $("mQrWrap").classList.add("d-none");
+        }
+        fillModal(o);
+        modalOrderId = res.d.token;
+        modalTimer = setInterval(pollModal, 5000);
+        new bootstrap.Modal($("successModal")).show();
+
+        cart = []; selectedSlot = null; $("studentName").value = "";
+        document.querySelectorAll('input[name="paymentMethod"]').forEach(function (r) { r.checked = false; });
+        menuSig = ""; slotsSig = "";
+        loadMenu(); loadSlots(); renderCart();
+      })
+      .catch(function () { showError("Network error. Please check your connection and try again."); })
+      .then(function () {
+        if (btn.textContent !== "Redirecting to payment...") {
+          btn.disabled = false; btn.textContent = "Place Order";
+        }
+      });
+  });
+
+  loadMenu(); loadSlots(); renderCart();
+  setInterval(loadSlots, 5000);
+  setInterval(loadMenu, 10000);
+})();
+</script>
+</body>
+</html>

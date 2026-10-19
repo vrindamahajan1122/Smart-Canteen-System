@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Analytics - Smart Campus Canteen</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    body { background: #f4f6f9; }
+    .kpi { border: 0; border-left: 5px solid #ff7e29; box-shadow: 0 2px 8px rgba(0,0,0,.08); }
+    .kpi .value { font-size: 2rem; font-weight: 800; line-height: 1.1; }
+    .chart-card { border: 0; box-shadow: 0 2px 8px rgba(0,0,0,.08); }
+    .chart-wrap { position: relative; height: 290px; }
+  </style>
+</head>
+<body>
+
+<nav class="navbar navbar-dark bg-dark">
+  <div class="container">
+    <span class="navbar-brand mb-0 h1">📊 Canteen Analytics</span>
+    <div>
+      <a class="btn btn-sm btn-outline-light me-1" href="/kitchen">Kitchen</a>
+      <a class="btn btn-sm btn-outline-light me-1" href="/">Student View</a>
+      <a class="btn btn-sm btn-outline-light" href="/display">Display Board</a>
+    </div>
+  </div>
+</nav>
+
+<main class="container py-4">
+  <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+    <div class="btn-group" role="group" aria-label="Date range">
+      <button type="button" class="btn btn-dark" data-range="today">Today</button>
+      <button type="button" class="btn btn-outline-dark" data-range="all">All time</button>
+    </div>
+    <small class="text-muted" id="updatedAt">Loading...</small>
+  </div>
+
+  <div id="errorBanner" class="alert alert-danger d-none"></div>
+
+  <!-- KPIs -->
+  <div class="row g-3 mb-4">
+    <div class="col-6 col-lg-3"><div class="card kpi"><div class="card-body">
+      <div class="text-muted small">Total orders</div><div class="value" id="kOrders">0</div></div></div></div>
+    <div class="col-6 col-lg-3"><div class="card kpi"><div class="card-body">
+      <div class="text-muted small">Revenue</div><div class="value" id="kRevenue">₹0</div></div></div></div>
+    <div class="col-6 col-lg-3"><div class="card kpi"><div class="card-body">
+      <div class="text-muted small">Average order</div><div class="value" id="kAvg">₹0</div></div></div></div>
+    <div class="col-6 col-lg-3"><div class="card kpi"><div class="card-body">
+      <div class="text-muted small">Busiest hour</div><div class="value" id="kPeak">-</div></div></div></div>
+  </div>
+
+  <!-- Charts -->
+  <div class="row g-3">
+    <div class="col-lg-7">
+      <div class="card chart-card"><div class="card-body">
+        <h2 class="h6">Orders and revenue by hour</h2>
+        <div class="chart-wrap"><canvas id="hourChart"></canvas></div>
+      </div></div>
+    </div>
+    <div class="col-lg-5">
+      <div class="card chart-card"><div class="card-body">
+        <h2 class="h6">Best-selling items (units)</h2>
+        <div class="chart-wrap"><canvas id="itemsChart"></canvas></div>
+      </div></div>
+    </div>
+    <div class="col-lg-7">
+      <div class="card chart-card"><div class="card-body">
+        <h2 class="h6">Demand by pickup slot</h2>
+        <div class="chart-wrap"><canvas id="slotChart"></canvas></div>
+      </div></div>
+    </div>
+    <div class="col-lg-5">
+      <div class="card chart-card"><div class="card-body">
+        <h2 class="h6">Orders by status</h2>
+        <div class="chart-wrap"><canvas id="statusChart"></canvas></div>
+      </div></div>
+    </div>
+  </div>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+<script>
+(function () {
+  "use strict";
+
+  var REFRESH_MS = 10000;
+  var range = "today";
+  var ORANGE = "#ff7e29", RED = "#ff4d4d";
+
+  function money(n) { return "₹" + Math.round(n).toLocaleString("en-IN"); }
+  function hourLabel(h) { return (h % 12 === 0 ? 12 : h % 12) + (h >= 12 ? " PM" : " AM"); }
+
+  var emptyChartOpts = { responsive: true, maintainAspectRatio: false };
+
+  var hourChart = new Chart(document.getElementById("hourChart"), {
+    data: {
+      labels: [],
+      datasets: [
+        { type: "bar", label: "Orders", data: [], backgroundColor: ORANGE, yAxisID: "y", borderRadius: 4 },
+        { type: "line", label: "Revenue (₹)", data: [], borderColor: RED, backgroundColor: RED, tension: .3, yAxisID: "y1" }
+      ]
+    },
+    options: Object.assign({}, emptyChartOpts, {
+      scales: {
+        y:  { beginAtZero: true, ticks: { precision: 0 }, title: { display: true, text: "Orders" } },
+        y1: { beginAtZero: true, position: "right", grid: { drawOnChartArea: false }, title: { display: true, text: "Revenue (₹)" } }
+      }
+    })
+  });
+
+  var itemsChart = new Chart(document.getElementById("itemsChart"), {
+    type: "bar",
+    data: { labels: [], datasets: [{ label: "Units sold", data: [], backgroundColor: ORANGE, borderRadius: 4 }] },
+    options: Object.assign({}, emptyChartOpts, {
+      indexAxis: "y",
+      plugins: { legend: { display: false } },
+      scales: { x: { beginAtZero: true, ticks: { precision: 0 } } }
+    })
+  });
+
+  var slotChart = new Chart(document.getElementById("slotChart"), {
+    type: "bar",
+    data: { labels: [], datasets: [{ label: "Orders", data: [], backgroundColor: "#0d6efd", borderRadius: 4 }] },
+    options: Object.assign({}, emptyChartOpts, {
+      plugins: { legend: { display: false } },
+      scales: { y: { beginAtZero: true, ticks: { precision: 0 } }, x: { ticks: { maxRotation: 60, minRotation: 45, autoSkip: false, font: { size: 10 } } } }
+    })
+  });
+
+  var STATUS_COLORS = { Pending: "#ffc107", Preparing: "#0dcaf0", Ready: "#198754", Completed: "#6c757d" };
+  var statusChart = new Chart(document.getElementById("statusChart"), {
+    type: "doughnut",
+    data: { labels: [], datasets: [{ data: [], backgroundColor: [] }] },
+    options: Object.assign({}, emptyChartOpts, { plugins: { legend: { position: "bottom" } } })
+  });
+
+  function setChart(chart, labels, datasets) {
+    chart.data.labels = labels;
+    datasets.forEach(function (d, i) { chart.data.datasets[i].data = d; });
+    chart.update();
+  }
+
+  function apply(d) {
+    document.getElementById("kOrders").textContent = d.total_orders;
+    document.getElementById("kRevenue").textContent = money(d.total_revenue);
+    document.getElementById("kAvg").textContent = money(d.avg_order);
+    document.getElementById("kPeak").textContent = d.peak_hour === null ? "-" : hourLabel(d.peak_hour);
+
+    setChart(hourChart,
+      d.hourly.map(function (h) { return hourLabel(h.hour); }),
+      [d.hourly.map(function (h) { return h.orders; }), d.hourly.map(function (h) { return h.revenue; })]);
+
+    setChart(itemsChart,
+      d.top_items.map(function (i) { return i.name; }),
+      [d.top_items.map(function (i) { return i.qty; })]);
+
+    setChart(slotChart,
+      d.slots.map(function (s) { return s.slot; }),
+      [d.slots.map(function (s) { return s.orders; })]);
+
+    var statuses = Object.keys(d.status);
+    statusChart.data.labels = statuses;
+    statusChart.data.datasets[0].data = statuses.map(function (s) { return d.status[s]; });
+    statusChart.data.datasets[0].backgroundColor = statuses.map(function (s) { return STATUS_COLORS[s] || "#adb5bd"; });
+    statusChart.update();
+  }
+
+  var errorBanner = document.getElementById("errorBanner");
+  var updatedAt = document.getElementById("updatedAt");
+
+  function load() {
+    return fetch("/api/analytics?range=" + range, { cache: "no-store" })
+      .then(function (res) { return res.json(); })
+      .then(function (data) {
+        if (!data.success) {
+          errorBanner.textContent = data.error || "Could not load analytics.";
+          errorBanner.classList.remove("d-none");
+          return;
+        }
+        errorBanner.classList.add("d-none");
+        apply(data);
+        updatedAt.textContent = "Updated " + new Date().toLocaleTimeString() + " - refreshes every 10 seconds";
+      })
+      .catch(function () {
+        errorBanner.textContent = "Network error while loading analytics.";
+        errorBanner.classList.remove("d-none");
+      });
+  }
+
+  document.querySelectorAll("[data-range]").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      range = btn.getAttribute("data-range");
+      document.querySelectorAll("[data-range]").forEach(function (b) {
+        var active = b === btn;
+        b.classList.toggle("btn-dark", active);
+        b.classList.toggle("btn-outline-dark", !active);
+      });
+      load();
+    });
+  });
+
+  load();
+  setInterval(load, REFRESH_MS);
+})();
+</script>
+</body>
+</html>

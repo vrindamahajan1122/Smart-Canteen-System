@@ -1,0 +1,6 @@
+Flask==3.0.3
+PyMySQL==1.1.1
+cryptography==43.0.1
+segno==1.6.1
+
+

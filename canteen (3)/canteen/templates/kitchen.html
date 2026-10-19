@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Kitchen Dashboard - Smart Campus Canteen</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    body { background: #f4f6f9; }
+    .token-cell { font-size: 1.4rem; font-weight: 800; }
+    .live-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #198754; margin-right: 6px; animation: pulse 1.5s infinite; }
+    .live-dot.offline { background: #dc3545; animation: none; }
+    @keyframes pulse { 0% { opacity: 1; } 50% { opacity: .3; } 100% { opacity: 1; } }
+    .stat { border-radius: 12px; color: #fff; padding: 10px 16px; }
+    .pay-badge { font-weight: 600; }
+    .pay-pending { background: #fd7e14; color: #fff; }
+    .pay-paid { background: #198754; color: #fff; }
+    .pay-failed { background: #dc3545; color: #fff; }
+    .pay-refunded { background: #6f42c1; color: #fff; }
+    .item-line { margin-bottom: 6px; }
+    .opt-hl { font-weight: 800; letter-spacing: .3px; margin-right: 4px; }
+    .note-hl { background: #fff3cd; border-left: 4px solid #ffc107; padding: 2px 8px; margin-top: 3px; font-weight: 700; }
+    tr.has-custom > td:first-child { border-left: 6px solid #dc3545; }
+  </style>
+</head>
+<body>
+
+<nav class="navbar navbar-dark bg-dark">
+  <div class="container-fluid">
+    <span class="navbar-brand mb-0 h1">👨‍🍳 Kitchen Dashboard</span>
+    <div>
+      <a class="btn btn-sm btn-outline-light me-1" href="/">Student View</a>
+      <a class="btn btn-sm btn-outline-light me-1" href="/display">Display Board</a>
+      <a class="btn btn-sm btn-outline-light" href="/analytics">Analytics</a>
+    </div>
+  </div>
+</nav>
+
+<main class="container-fluid py-4">
+  <div class="row g-3 mb-3">
+    <div class="col-6 col-md-3"><div class="stat bg-warning text-dark"><div class="small">Pending</div><div class="fs-3 fw-bold" id="sPending">0</div></div></div>
+    <div class="col-6 col-md-3"><div class="stat bg-info text-dark"><div class="small">Preparing</div><div class="fs-3 fw-bold" id="sPreparing">0</div></div></div>
+    <div class="col-6 col-md-3"><div class="stat bg-success"><div class="small">Ready</div><div class="fs-3 fw-bold" id="sReady">0</div></div></div>
+    <div class="col-6 col-md-3"><div class="stat bg-dark"><div class="small">Avg preparation</div><div class="fs-3 fw-bold" id="sAvg">-</div><div class="small" id="sAvgSrc"></div></div></div>
+  </div>
+
+  <div class="d-flex justify-content-between align-items-center mb-2">
+    <h1 class="h4 mb-0">Active Orders <span class="badge bg-secondary" id="orderCount">0</span></h1>
+    <small class="text-muted"><span class="live-dot" id="liveDot"></span><span id="liveText">Live - updates every 3 seconds</span></small>
+  </div>
+  <p class="text-muted small mb-1">Queue order: earliest pickup slot first, then order time. Food status and payment status are independent.</p>
+  <p class="small mb-3"><span class="badge bg-danger">RED / UPPERCASE</span> = remove or reduce something. <span class="badge bg-primary">BLUE</span> = extra. Customizations are preferences, not allergen guarantees.</p>
+
+  <div id="errorBanner" class="alert alert-danger d-none"></div>
+
+  <div class="card shadow-sm mb-4">
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0">
+        <thead class="table-dark">
+          <tr>
+            <th>Token #</th><th>Student Name</th><th>Items Ordered</th><th>Pickup Slot</th>
+            <th>Queue</th><th>Status</th><th>Payment Method</th><th>Payment Status</th>
+            <th class="text-end">Actions</th>
+          </tr>
+        </thead>
+        <tbody id="ordersBody">
+          <tr><td colspan="9" class="text-center text-muted py-4">Loading orders...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <h2 class="h5">Cancelled Orders Today <span class="badge bg-secondary" id="cancelCount">0</span></h2>
+  <p class="text-muted small">When a student cancels a paid order, a refund becomes due. Press <strong>Mark Refund Done</strong> only after the money has really been handed back. Demo (online) refunds are simulated - no real money moves.</p>
+  <div class="card shadow-sm">
+    <div class="table-responsive">
+      <table class="table align-middle mb-0">
+        <thead class="table-secondary">
+          <tr><th>Token #</th><th>Student</th><th>Payment</th><th>Amount</th><th>Cancelled at</th><th>Reason</th><th>Refund</th><th class="text-end">Action</th></tr>
+        </thead>
+        <tbody id="cancelBody">
+          <tr><td colspan="8" class="text-center text-muted py-3">No cancelled orders.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</main>
+
+<script>
+(function () {
+  "use strict";
+
+  var tbody = document.getElementById("ordersBody");
+  var cbody = document.getElementById("cancelBody");
+
+  function $(id) { return document.getElementById(id); }
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+  function badge(status) {
+    var cls = "bg-secondary";
+    if (status === "Pending") { cls = "bg-warning text-dark"; }
+    else if (status === "Preparing") { cls = "bg-info text-dark"; }
+    else if (status === "Ready") { cls = "bg-success"; }
+    return '<span class="badge ' + cls + '">' + esc(status) + "</span>";
+  }
+  function payBadge(status) {
+    if (status === "Paid") { return '<span class="badge pay-badge pay-paid">✓ Paid</span>'; }
+    if (status === "Failed") { return '<span class="badge pay-badge pay-failed">✕ Failed</span>'; }
+    if (status === "Refunded") { return '<span class="badge pay-badge pay-refunded">↩ Refunded</span>'; }
+    return '<span class="badge pay-badge pay-pending">🕒 Pending</span>';
+  }
+  function hasCustom(o) {
+    return (o.items || []).some(function (i) { return (i.options && i.options.length) || i.note; });
+  }
+  function itemsHtml(o) {
+    if (!o.items || !o.items.length) { return esc(o.items_summary); }
+    return o.items.map(function (i) {
+      var opts = (i.options || []).map(function (n) {
+        var cls = /^(no|less)\b/i.test(n) ? "bg-danger" : "bg-primary";
+        return '<span class="badge ' + cls + ' opt-hl text-uppercase">' + esc(n) + "</span>";
+      }).join("");
+      var note = i.note ? '<div class="note-hl">📝 ' + esc(i.note) + "</div>" : "";
+      return '<div class="item-line"><strong>' + i.quantity + " x " + esc(i.name) + "</strong> " + opts + note + "</div>";
+    }).join("");
+  }
+  function actions(o) {
+    var id = o.order_id, s = o.status;
+    var html = '<div class="btn-group btn-group-sm" role="group">' +
+      '<button class="btn btn-outline-info" data-id="' + id + '" data-status="Preparing"' + (s === "Preparing" ? " disabled" : "") + '>Mark Preparing</button>' +
+      '<button class="btn btn-outline-success" data-id="' + id + '" data-status="Ready"' + (s === "Ready" ? " disabled" : "") + '>Mark Ready</button>' +
+      '<button class="btn btn-outline-dark" data-id="' + id + '" data-status="Completed">Mark Completed</button></div>';
+    if (o.payment_method === "Cash" && o.payment_status === "Pending") {
+      html += '<div class="mt-1"><button class="btn btn-sm btn-success" data-pay-id="' + id + '">💵 Mark Cash Paid</button></div>';
+    }
+    return html;
+  }
+
+  function render(orders) {
+    $("orderCount").textContent = orders.length;
+    if (!orders.length) {
+      tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted py-4">No active orders right now.</td></tr>';
+      return;
+    }
+    var html = "";
+    orders.forEach(function (o) {
+      var q = o.queue_position ? '<span class="badge bg-dark">#' + o.queue_position + " in queue</span>" : '<span class="text-muted">-</span>';
+      html += '<tr class="' + (hasCustom(o) ? "has-custom" : "") + '">' +
+        '<td class="token-cell">#' + o.order_id + (hasCustom(o) ? '<div><span class="badge bg-danger">CUSTOM</span></div>' : "") + "</td>" +
+        "<td>" + esc(o.student_name) + "</td>" +
+        "<td>" + itemsHtml(o) + "</td>" +
+        "<td>" + esc(o.pickup_time) + "</td>" +
+        "<td>" + q + "</td>" +
+        "<td>" + badge(o.status) + "</td>" +
+        "<td>" + esc(o.payment_method_label || o.payment_method || "-") + "</td>" +
+        "<td>" + payBadge(o.payment_status) + "</td>" +
+        '<td class="text-end">' + actions(o) + "</td></tr>";
+    });
+    tbody.innerHTML = html;
+  }
+
+  function renderCancelled(list) {
+    $("cancelCount").textContent = list.length;
+    if (!list.length) {
+      cbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-3">No cancelled orders.</td></tr>';
+      return;
+    }
+    var html = "";
+    list.forEach(function (c) {
+      var refund = c.refund_status === "Pending" ? '<span class="badge pay-pending">🕒 Refund due</span>'
+        : (c.refund_status === "Refunded" ? '<span class="badge pay-refunded">↩ Refunded</span>' : '<span class="text-muted">-</span>');
+      var btn = c.refund_status === "Pending"
+        ? '<button class="btn btn-sm btn-primary" data-refund-id="' + c.order_id + '">Mark Refund Done</button>' : "";
+      html += "<tr><td class='token-cell'>#" + c.order_id + "</td><td>" + esc(c.student_name) + "</td><td>" + esc(c.payment_method_label) +
+        "</td><td>₹" + Number(c.total_price).toFixed(2) + "</td><td>" + esc(c.cancelled_at) + "</td><td>" + esc(c.cancellation_reason || "-") +
+        "</td><td>" + refund + '</td><td class="text-end">' + btn + "</td></tr>";
+    });
+    cbody.innerHTML = html;
+  }
+
+  function setOnline(ok, msg) {
+    $("liveDot").classList.toggle("offline", !ok);
+    $("liveText").textContent = ok ? "Live - updates every 3 seconds" : "Connection problem - retrying...";
+    if (ok) { $("errorBanner").classList.add("d-none"); }
+    else { $("errorBanner").textContent = msg || "Could not load orders."; $("errorBanner").classList.remove("d-none"); }
+  }
+
+  function load() {
+    return fetch("/api/orders", { cache: "no-store" }).then(function (r) { return r.json(); }).then(function (d) {
+      if (!d.success) { setOnline(false, d.error); return; }
+      setOnline(true);
+      render(d.orders);
+      renderCancelled(d.cancelled || []);
+      $("sPending").textContent = d.meta.pending;
+      $("sPreparing").textContent = d.meta.preparing;
+      $("sReady").textContent = d.meta.ready;
+      $("sAvg").textContent = d.meta.avg_prep_minutes + " min";
+      $("sAvgSrc").textContent = d.meta.prep_source === "historical" ? "from real timestamps" : "default estimate";
+    }).catch(function () { setOnline(false, "Network error while loading orders."); });
+  }
+
+  function post(url, body, failMsg) {
+    return fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
+      .then(function (r) { return r.json(); })
+      .then(function (d) { if (!d.success) { alert(d.error || failMsg); } return load(); })
+      .catch(function () { alert("Network error. Nothing was changed."); return load(); });
+  }
+
+  tbody.addEventListener("click", function (e) {
+    var payBtn = e.target.closest("button[data-pay-id]");
+    if (payBtn) {
+      payBtn.disabled = true;
+      post("/api/payment/" + parseInt(payBtn.getAttribute("data-pay-id"), 10) + "/cash-paid", {}, "Could not record the cash payment.");
+      return;
+    }
+    var btn = e.target.closest("button[data-status]");
+    if (!btn) { return; }
+    btn.disabled = true;
+    post("/api/update_status", { order_id: parseInt(btn.getAttribute("data-id"), 10), status: btn.getAttribute("data-status") },
+      "Could not update the order.");
+  });
+
+  cbody.addEventListener("click", function (e) {
+    var btn = e.target.closest("button[data-refund-id]");
+    if (!btn) { return; }
+    if (!confirm("Confirm that the refund has really been handed back to the student?")) { return; }
+    btn.disabled = true;
+    post("/api/order/" + parseInt(btn.getAttribute("data-refund-id"), 10) + "/refund-done", {}, "Could not record the refund.");
+  });
+
+  load();
+  setInterval(load, 3000);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Track Order - Smart Campus Canteen</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    body { background: #f4f6f9; }
+    .brand { background: linear-gradient(135deg, #ff7e29, #ff4d4d); color: #fff; }
+    .order-no { font-size: 2.6rem; font-weight: 800; }
+    .step { display: flex; align-items: center; padding: 10px 0; font-size: 1.1rem; }
+    .dot { width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin-right: 14px; font-weight: 700; border: 2px solid #adb5bd; color: #adb5bd; background: #fff; }
+    .step.done .dot { background: #198754; border-color: #198754; color: #fff; }
+    .step.current .dot { background: #fd7e14; border-color: #fd7e14; color: #fff; animation: pulse 1.4s infinite; }
+    .step.upcoming { color: #868e96; }
+    @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(253,126,20,.6); } 70% { box-shadow: 0 0 0 12px rgba(253,126,20,0); } 100% { box-shadow: 0 0 0 0 rgba(253,126,20,0); } }
+    @media (prefers-reduced-motion: reduce) { .step.current .dot { animation: none; } }
+    .tile { border: 1px solid #dee2e6; border-radius: 12px; background: #fff; padding: 12px 6px; text-align: center; }
+    .tile .v { font-size: 1.5rem; font-weight: 800; }
+    .pay-pending { background: #fd7e14; color: #fff; }
+    .pay-paid { background: #198754; color: #fff; }
+    .pay-failed { background: #dc3545; color: #fff; }
+    .pay-refunded { background: #6f42c1; color: #fff; }
+    .opt-badge { font-weight: 600; margin-right: 4px; }
+    .note { font-size: .85rem; color: #6c757d; }
+    .star-row { display: flex; gap: 4px; }
+    .star { border: 0; background: transparent; font-size: 2rem; line-height: 1; color: #ced4da; padding: 0 2px; cursor: pointer; }
+    .star.on { color: #ffb400; }
+    .star:focus-visible { outline: 3px solid #0d6efd; border-radius: 6px; }
+    .done-stars { color: #ffb400; letter-spacing: 2px; }
+  </style>
+</head>
+<body>
+
+<div class="brand text-center py-3">
+  <div class="fw-bold fs-5">🍽️ SMART CAMPUS CANTEEN</div>
+</div>
+
+<main class="container py-4" style="max-width: 560px;">
+  <div id="errBox" class="alert alert-danger d-none"></div>
+  <div id="flashBox" class="alert alert-success d-none"></div>
+
+  <div class="card shadow-sm" id="card">
+    <div class="card-body">
+      <div class="text-center mb-3">
+        <div class="text-muted">Order</div>
+        <div class="order-no">#<span id="orderNo"></span></div>
+        <div class="fs-5" id="statusLine">Loading...</div>
+        <div class="small text-muted" id="msgLine"></div>
+      </div>
+
+      <div id="cancelledBox" class="alert alert-danger d-none">
+        <div class="fw-bold">This order was cancelled</div>
+        <div class="small" id="cancelledInfo"></div>
+        <div class="small mt-1" id="refundInfo"></div>
+      </div>
+
+      <div class="mb-3" id="steps"></div>
+
+      <div class="row g-2 mb-3" id="tiles">
+        <div class="col-4"><div class="tile"><div class="small text-muted">Estimated wait</div><div class="v" id="tWait">-</div></div></div>
+        <div class="col-4"><div class="tile"><div class="small text-muted">Orders ahead</div><div class="v" id="tAhead">-</div></div></div>
+        <div class="col-4"><div class="tile"><div class="small text-muted">Expected ready</div><div class="v" id="tReady">-</div></div></div>
+      </div>
+
+      <div class="mb-1"><span class="text-muted">Pickup slot:</span> <strong id="pSlot">-</strong></div>
+      <div class="mb-2"><span class="text-muted">Name:</span> <strong id="pName">-</strong></div>
+      <div class="mb-1 text-muted">Items:</div>
+      <ul class="list-unstyled mb-2" id="pItems"></ul>
+      <div class="mb-1"><span class="text-muted">Total:</span> <strong id="pTotal">-</strong></div>
+      <div class="mb-2"><span class="text-muted">Payment:</span> <strong id="pPay">-</strong> <span id="pPayBadge"></span></div>
+      <div id="payNow" class="mb-2 d-none">
+        <a class="btn btn-sm btn-warning" id="payNowLink" href="#">Complete Demo Payment</a>
+        <span class="small text-muted ms-1">(demo mode - no real money)</span>
+      </div>
+      <div class="small text-muted" id="etaNote"></div>
+
+      <!-- Cancellation -->
+      <div id="cancelSection" class="border-top mt-3 pt-3 d-none">
+        <div id="cancelAllowed" class="d-none">
+          <button type="button" class="btn btn-outline-danger w-100" id="openCancel">Cancel this order</button>
+          <div class="small text-muted mt-1" id="cancelCountdown"></div>
+        </div>
+        <div id="cancelBlocked" class="small text-muted d-none"></div>
+      </div>
+
+      <!-- Feedback -->
+      <div id="feedbackSection" class="border-top mt-3 pt-3 d-none">
+        <div id="feedbackForm" class="d-none">
+          <h2 class="h5">How was your order?</h2>
+          <div class="mb-2"><div class="fw-semibold">Food quality</div><div class="star-row" id="starsFood" data-field="food"></div></div>
+          <div class="mb-2"><div class="fw-semibold">Service</div><div class="star-row" id="starsService" data-field="service"></div></div>
+          <div class="mb-2"><div class="fw-semibold">Waiting-time satisfaction</div><div class="star-row" id="starsWait" data-field="wait"></div></div>
+          <label for="fbComment" class="form-label mt-2 mb-1">Comments (optional)</label>
+          <textarea class="form-control" id="fbComment" rows="2" maxlength="500" placeholder="Tell us what we can improve"></textarea>
+          <div id="fbError" class="alert alert-danger py-2 mt-2 mb-0 d-none"></div>
+          <button type="button" class="btn btn-primary w-100 mt-3" id="fbSubmit" disabled>Submit feedback</button>
+        </div>
+        <div id="feedbackDone" class="d-none">
+          <h2 class="h5">Thanks for your feedback</h2>
+          <div class="small">Food <span class="done-stars" id="dFood"></span></div>
+          <div class="small">Service <span class="done-stars" id="dService"></span></div>
+          <div class="small">Waiting time <span class="done-stars" id="dWait"></span></div>
+          <div class="small text-muted mt-1" id="dComment"></div>
+        </div>
+      </div>
+      <div id="authHint" class="small text-muted border-top mt-3 pt-3 d-none">
+        To cancel this order or leave feedback, open this page from the QR code or the link shown when you placed the order.
+      </div>
+    </div>
+  </div>
+  <p class="text-center text-muted small mt-3" id="updated">Updates automatically</p>
+</main>
+
+<!-- Cancel confirmation -->
+<div class="modal fade" id="cancelModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header"><h5 class="modal-title">Cancel this order?</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div>
+      <div class="modal-body">
+        <p class="mb-2">Your items go back on the menu and your pickup slot is released. A refund will be marked as due: staff confirm it once it has really been returned (online payments here are a demo, so no real money moves).</p>
+        <label for="cancelReason" class="form-label">Reason (optional)</label>
+        <input type="text" class="form-control" id="cancelReason" maxlength="200" placeholder="e.g. Plans changed">
+        <div id="cancelError" class="alert alert-danger py-2 mt-3 mb-0 d-none"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Keep my order</button>
+        <button type="button" class="btn btn-danger" id="confirmCancel">Yes, cancel order</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+(function () {
+  "use strict";
+
+  var ORDER_ID = {{ order_id|tojson }};
+  var KEY = new URLSearchParams(window.location.search).get("key") || "";
+  var STEPS = ["Order Placed", "Preparing", "Waiting for Pickup", "Completed"];
+  var IDX = { Pending: 0, Preparing: 1, Ready: 2, Completed: 3 };
+  var STATUS_UI = {
+    Pending: "🟡 Waiting in queue", Preparing: "🟠 Preparing",
+    Ready: "🟢 Ready for pickup!", Completed: "⚪ Completed", Cancelled: "🔴 Cancelled"
+  };
+  var timer = null, deadline = 0, ratings = { food: 0, service: 0, wait: 0 }, lastData = null;
+  var cancelModal = new bootstrap.Modal(document.getElementById("cancelModal"));
+
+  function $(id) { return document.getElementById(id); }
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+  function show(id, on) { $(id).classList.toggle("d-none", !on); }
+  function payBadge(status) {
+    if (status === "Paid") { return '<span class="badge pay-paid">✓ Paid</span>'; }
+    if (status === "Failed") { return '<span class="badge pay-failed">✕ Failed</span>'; }
+    if (status === "Refunded") { return '<span class="badge pay-refunded">↩ Refunded</span>'; }
+    return '<span class="badge pay-pending">🕒 Pending</span>';
+  }
+  function stars(n) { return new Array(n + 1).join("★") + new Array(6 - n).join("☆"); }
+  function flash(msg) { $("flashBox").textContent = msg; show("flashBox", true); }
+
+  $("orderNo").textContent = ORDER_ID;
+
+  function renderSteps(status) {
+    var idx = IDX[status], html = "";
+    for (var i = 0; i < STEPS.length; i++) {
+      var cls, mark;
+      if (status === "Completed" || i < idx || i === 0) { cls = "done"; mark = "✓"; }
+      else if (i === idx) { cls = "current"; mark = "●"; }
+      else { cls = "upcoming"; mark = "○"; }
+      html += '<div class="step ' + cls + '"><div class="dot">' + mark + '</div><div>' + STEPS[i] + '</div></div>';
+    }
+    $("steps").innerHTML = html;
+  }
+
+  function renderItems(items) {
+    $("pItems").innerHTML = items.map(function (i) {
+      var opts = (i.options || []).map(function (n) {
+        var cls = /^(no|less)\b/i.test(n) ? "bg-danger" : "bg-primary";
+        return '<span class="badge ' + cls + ' opt-badge">' + esc(n) + "</span>";
+      }).join("");
+      return "<li class='mb-1'>" + i.quantity + " x " + esc(i.name) + " " + opts +
+        (i.note ? '<div class="note">Note: ' + esc(i.note) + "</div>" : "") + "</li>";
+    }).join("");
+  }
+
+  /* ---------- Cancellation UI ---------- */
+  function tickCountdown() {
+    var left = Math.max(0, Math.round((deadline - Date.now()) / 1000));
+    var m = Math.floor(left / 60), s = left % 60;
+    $("cancelCountdown").textContent = "You can cancel for the next " + m + ":" + (s < 10 ? "0" : "") + s + ".";
+    if (left <= 0 && !$("cancelAllowed").classList.contains("d-none")) { load(); }
+  }
+  setInterval(function () { if (deadline) { tickCountdown(); } }, 1000);
+
+  function renderCancel(d) {
+    var terminal = d.status === "Cancelled" || d.status === "Completed";
+    if (!d.authorized || d.status === "Cancelled") { show("cancelSection", false); return; }
+    if (d.status === "Completed") { show("cancelSection", false); return; }
+    show("cancelSection", !terminal);
+    show("cancelAllowed", d.can_cancel);
+    show("cancelBlocked", !d.can_cancel);
+    if (d.can_cancel) {
+      deadline = Date.now() + d.cancel_seconds_left * 1000;
+      tickCountdown();
+    } else {
+      deadline = 0;
+      $("cancelBlocked").textContent = d.cancel_message;
+    }
+  }
+
+  $("openCancel").addEventListener("click", function () { show("cancelError", false); cancelModal.show(); });
+  $("confirmCancel").addEventListener("click", function () {
+    var btn = $("confirmCancel");
+    btn.disabled = true;
+    fetch("/api/order/" + ORDER_ID + "/cancel", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ key: KEY, reason: $("cancelReason").value })
+    }).then(function (r) { return r.json(); }).then(function (d) {
+      if (!d.success) { $("cancelError").textContent = d.error || "Could not cancel the order."; show("cancelError", true); return; }
+      cancelModal.hide();
+      flash(d.message);
+      if (!timer) { timer = setInterval(load, 4000); }
+      load();
+    }).catch(function () { $("cancelError").textContent = "Network error. Your order was not changed."; show("cancelError", true); })
+      .then(function () { btn.disabled = false; });
+  });
+
+  /* ---------- Feedback UI ---------- */
+  function buildStars(containerId) {
+    var box = $(containerId), field = box.getAttribute("data-field"), html = "";
+    for (var i = 1; i <= 5; i++) {
+      html += '<button type="button" class="star" data-field="' + field + '" data-val="' + i + '" aria-label="' + i + ' star' + (i > 1 ? "s" : "") + '">★</button>';
+    }
+    box.innerHTML = html;
+  }
+  ["starsFood", "starsService", "starsWait"].forEach(buildStars);
+
+  function paintStars() {
+    document.querySelectorAll(".star").forEach(function (b) {
+      b.classList.toggle("on", parseInt(b.getAttribute("data-val"), 10) <= ratings[b.getAttribute("data-field")]);
+    });
+    $("fbSubmit").disabled = !(ratings.food && ratings.service && ratings.wait);
+  }
+  document.querySelectorAll(".star-row").forEach(function (row) {
+    row.addEventListener("click", function (e) {
+      var b = e.target.closest(".star");
+      if (!b) { return; }
+      ratings[b.getAttribute("data-field")] = parseInt(b.getAttribute("data-val"), 10);
+      paintStars();
+    });
+  });
+
+  $("fbSubmit").addEventListener("click", function () {
+    var btn = $("fbSubmit");
+    btn.disabled = true; show("fbError", false);
+    fetch("/api/order/" + ORDER_ID + "/feedback", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ key: KEY, food_rating: ratings.food, service_rating: ratings.service,
+                             wait_rating: ratings.wait, comment: $("fbComment").value })
+    }).then(function (r) { return r.json(); }).then(function (d) {
+      if (!d.success) { $("fbError").textContent = d.error || "Could not save your feedback."; show("fbError", true); paintStars(); return; }
+      flash(d.message);
+      load();
+    }).catch(function () { $("fbError").textContent = "Network error. Please try again."; show("fbError", true); paintStars(); });
+  });
+
+  function renderFeedback(d) {
+    var completed = d.status === "Completed";
+    show("feedbackSection", completed && d.authorized);
+    show("authHint", !d.authorized && (completed || d.status === "Pending" || d.status === "Preparing" || d.status === "Ready"));
+    if (!(completed && d.authorized)) { return; }
+    show("feedbackForm", d.feedback_allowed);
+    show("feedbackDone", d.feedback_submitted);
+    if (d.feedback) {
+      $("dFood").textContent = stars(d.feedback.food_rating);
+      $("dService").textContent = stars(d.feedback.service_rating);
+      $("dWait").textContent = stars(d.feedback.wait_rating);
+      $("dComment").textContent = d.feedback.comment ? "Your comment: " + d.feedback.comment : "";
+    }
+  }
+
+  /* ---------- Main render ---------- */
+  function render(d) {
+    lastData = d;
+    var cancelled = d.status === "Cancelled";
+    $("statusLine").textContent = STATUS_UI[d.status] || d.status;
+    $("msgLine").textContent = d.message;
+    show("steps", !cancelled);
+    show("tiles", !cancelled);
+    show("cancelledBox", cancelled);
+    if (cancelled) {
+      $("cancelledInfo").textContent = "Cancelled at " + d.cancelled_at + (d.cancellation_reason ? " - Reason: " + d.cancellation_reason : "");
+      $("refundInfo").textContent = d.refund_message;
+    } else {
+      renderSteps(d.status);
+      var finished = (d.status === "Ready" || d.status === "Completed");
+      $("tWait").textContent = finished ? "0 min" : d.estimated_wait_minutes + " min";
+      $("tAhead").textContent = d.orders_ahead;
+      $("tReady").textContent = d.expected_ready_time;
+    }
+    $("pSlot").textContent = d.pickup_time;
+    $("pName").textContent = d.student_name;
+    renderItems(d.items || []);
+    $("pTotal").textContent = "₹" + Number(d.total_price).toFixed(2);
+    $("pPay").textContent = d.payment_method_label || d.payment_method || "-";
+    $("pPayBadge").innerHTML = payBadge(d.payment_status);
+    var needsPayment = d.payment_method === "Online" && d.payment_status !== "Paid" && !cancelled && d.payment_status !== "Refunded";
+    show("payNow", needsPayment);
+    if (needsPayment) { $("payNowLink").setAttribute("href", "/payment/" + ORDER_ID + (KEY ? "?key=" + encodeURIComponent(KEY) : "")); }
+
+    $("etaNote").textContent = cancelled ? "" : (d.eta_source === "historical"
+      ? "ETA uses the kitchen's real average of " + d.avg_prep_minutes + " min per order (" + d.eta_samples + " recent orders)."
+      : "ETA uses a default estimate of " + d.avg_prep_minutes + " min per order until enough history exists.");
+    renderCancel(d);
+    renderFeedback(d);
+    document.title = "Order #" + ORDER_ID + " - " + d.status;
+    $("updated").textContent = "Last updated " + new Date().toLocaleTimeString() + " - updates automatically";
+
+    var settled = (d.status === "Completed" && d.payment_status === "Paid") ||
+                  (cancelled && d.refund_status !== "Pending");
+    if (settled && timer) { clearInterval(timer); timer = null; }
+  }
+
+  function load() {
+    var url = "/api/order/" + ORDER_ID + "/status" + (KEY ? "?key=" + encodeURIComponent(KEY) : "");
+    fetch(url, { cache: "no-store" })
+      .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+      .then(function (res) {
+        if (!res.ok || !res.d.success) {
+          $("errBox").textContent = res.d.error || "Could not load this order.";
+          show("errBox", true);
+          if (res.d.error === "Order not found." && timer) { clearInterval(timer); timer = null; show("card", false); }
+          return;
+        }
+        show("errBox", false);
+        show("card", true);
+        render(res.d);
+      })
+      .catch(function () { $("errBox").textContent = "Connection problem - retrying..."; show("errBox", true); });
+  }
+
+  load();
+  timer = setInterval(load, 4000);
+})();
+</script>
+</body>
+</html>
